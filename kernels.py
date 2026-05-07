@@ -69,10 +69,17 @@ def sgemm_coalesced(A, B, C, M, N, K):
 
     With a 1D block of 1024 threads, threadIdx.x runs 0..1023.
     Derive (row_in_tile, col_in_tile) from threadIdx.x using integer division
-    and modulo by BLOCKSIZE. 
+    and modulo by BLOCKSIZE.
     Be careful which one indexes the column.
     """
-    # TODO
+    tx = cuda.threadIdx.x
+    x = cuda.blockIdx.x * BLOCKSIZE + (tx // BLOCKSIZE)
+    y = cuda.blockIdx.y * BLOCKSIZE + (tx % BLOCKSIZE)
+    if x < M and y < N:
+        tmp = float32(0.0)
+        for i in range(K):
+            tmp += A[x, i] * B[i, y]
+        C[x, y] = tmp
     return
 
 
