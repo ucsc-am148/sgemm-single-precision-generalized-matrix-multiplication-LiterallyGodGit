@@ -113,17 +113,17 @@ def sgemm_smem(A, B, C, M, N, K):
 
     row = cuda.blockIdx.x * BM3 + local_row
     col = cuda.blockIdx.y * BN3 + local_col
-    if row < M and col < N: # not 100% sure about this
-        acc = float32(0.0)
-        for kt in range(0, K, BK3):
-            As[local_row, local_col] = A[row, kt + local_col]
-            Bs[local_row, local_col] = B[kt + local_row, col]
-            cuda.syncthreads()
+    acc = float32(0.0)
+    for kt in range(0, K, BK3):
+        As[local_row, local_col] = A[row, kt + local_col]
+        Bs[local_row, local_col] = B[kt + local_row, col]
+        cuda.syncthreads()
 
-            for dk in range(BK3):
-                acc += As[local_row, dk] * Bs[dk, local_col]
-            cuda.syncthreads()
+        for dk in range(BK3):
+            acc += As[local_row, dk] * Bs[dk, local_col]
+        cuda.syncthreads()
 
+    if row < M and col < N:
         C[row, col] = acc
     return
 
