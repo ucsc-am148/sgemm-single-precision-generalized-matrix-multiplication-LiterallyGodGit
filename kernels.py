@@ -150,7 +150,40 @@ def sgemm_1d_tile(A, B, C, M, N, K):
     Use cuda.local.array(TM4, float32) for the per-thread accumulator array.
     Initialize all entries to 0.0 before the K-loop.
     """
-    # TODO
+    As = cuda.shared.array((BM4, BK4), float32)
+    Bs = cuda.shared.array((BK4, BN4), float32)
+
+    c_col_block = cuda.blockIdx.x
+    c_row_block = cuda.blockIdx.y
+
+    tx = cuda.threadIdx.x
+    thread_row = tx // BN4
+    thread_col = tx % BN4
+    a_row = tx // BK4
+    a_col = tx % BK4
+    b_row = tx // BN4
+    b_col = tx % BN4
+
+    thread_results = cuda.local.array(TM4, float32)
+    for i in range(TM4):
+        thread_results[i] = float32(0.0)
+
+    for kt in range(0, K, BK4):
+        As[a_row, a_col] = A[c_row_block * BM4 + a_row, kt + a_col]
+        Bs[b_row, b_col] = B[kt + b_row, c_col_block * BN4 + b_col]
+        cuda.syncthreads()
+
+        for dk in range(BK4):
+            b_val = Bs[dk, thread_col]
+            for m in range(TM4):
+                thread_results[m] += As[thread_row * TM4 + m, dk] * b_val
+        cuda.syncthreads()
+
+    for m in range(TM4):
+        global_row = c_row_block * BM4 + thread_row * TM4 + m
+        global_col = c_col_block * BN4 + thread_col
+        if global_row < M and global_col < N:
+            C[global_row, global_col] = thread_results[m]
     return
 
 
