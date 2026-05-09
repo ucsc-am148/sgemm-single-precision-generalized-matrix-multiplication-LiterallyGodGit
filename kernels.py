@@ -73,13 +73,16 @@ def sgemm_coalesced(A, B, C, M, N, K):
     Be careful which one indexes the column.
     """
     tx = cuda.threadIdx.x
+
     x = cuda.blockIdx.x * BLOCKSIZE + (tx // BLOCKSIZE)
     y = cuda.blockIdx.y * BLOCKSIZE + (tx % BLOCKSIZE)
+
     if x < M and y < N:
         tmp = float32(0.0)
         for i in range(K):
             tmp += A[x, i] * B[i, y]
         C[x, y] = tmp
+
     return
 
 
@@ -108,12 +111,15 @@ def sgemm_smem(A, B, C, M, N, K):
     Bs = cuda.shared.array((BK3, BN3), float32)
 
     tx = cuda.threadIdx.x
+
     local_row = tx // BN3
     local_col = tx % BN3
 
     row = cuda.blockIdx.x * BM3 + local_row
     col = cuda.blockIdx.y * BN3 + local_col
+
     acc = float32(0.0)
+
     for kt in range(0, K, BK3):
         As[local_row, local_col] = A[row, kt + local_col]
         Bs[local_row, local_col] = B[kt + local_row, col]
@@ -159,8 +165,10 @@ def sgemm_1d_tile(A, B, C, M, N, K):
     tx = cuda.threadIdx.x
     thread_row = tx // BN4
     thread_col = tx % BN4
+
     a_row = tx // BK4
     a_col = tx % BK4
+
     b_row = tx // BN4
     b_col = tx % BN4
 
@@ -215,7 +223,7 @@ def sgemm_2d_tile(A, B, C, M, N, K):
     c_row_block = cuda.blockIdx.y
 
     tx = cuda.threadIdx.x
-    num_threads = (BM5 * BN5) // (TM5 * TN5)
+    num_threads = (BM5 * BN5) // (TM5 * TN5) # annoying
 
     thread_row = tx // (BN5//TN5)
     thread_col = tx % (BN5//TN5)
