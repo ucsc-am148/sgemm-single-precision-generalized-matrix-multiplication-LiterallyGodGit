@@ -208,7 +208,64 @@ def sgemm_2d_tile(A, B, C, M, N, K):
     For accumulators, use cuda.local.array((TM5, TN5), float32).
     Numba supports tuple-shaped local arrays!
     """
-    # TODO
+    As = cuda.shared.array((BM5, BK5), float32)
+    Bs = cuda.shared.array((BK5, BN5), float32)
+
+    c_col_block = cuda.blockIdx.x
+    c_row_block = cuda.blockIdx.y
+
+    tx = cuda.threadIdx.x
+    num_threads = (BM5 * BN5) // (TM5 * TN5)
+
+    thread_row = tx // (BN5//TN5)
+    thread_col = tx % (BN5//TN5)
+
+    a_row = tx // BK5
+    a_col = tx % BK5
+    a_row_stride = num_threads // BK5
+
+    b_row = tx // BN5
+    b_col = tx % BN5
+    b_row_stride = num_threads // BN5
+
+    thread_results = cuda.local.array((TM5, TN5), float32)
+    a_vals = cuda.local.array(TM5, float32)
+    b_vals = cuda.local.array(TN5, float32)
+
+    # setting to 0 the thread results for accumulates
+    for i in range(TM5):
+        for j in range(TN5):
+            thread_results[i, j] = float32(0.0)
+
+    for kt in range(0, K, BK5):
+        # Each thread loading multiple rows of As to fill the BM5 x BK5 tile
+        for load_offset in range(0, BM5, a_row_stride):
+            As[a_row + load_offset, a_col] = A[c_row_block * BM5 + a_row + load_offset, kt + a_col]
+        # Each thread loading multiple rows of Bs to fill the BK5 x BN5 tile
+        for load_offset in range(0, BK5, b_row_stride):
+            Bs[b_row + load_offset, b_col] = B[kt + b_row + load_offset, c_col_block * BN5 + b_col]
+        cuda.syncthreads()
+
+        # Accumulate outer products across the K-chunk
+        for dk in range(BK5):
+            for m in range(TM5):
+                a_vals[m] = As[thread_row * TM5 + m, dk]
+            for n in range(TN5):
+                b_vals[n] = Bs[dk, thread_col * TN5 + n]
+
+            # Outer product update: result += a_reg x b_reg
+            for m in range(TM5):
+                for n in range(TN5):
+                    thread_results[m, n] += a_vals[m] * b_vals[n]
+        cuda.syncthreads()
+
+    # write back to global memory
+    for m in range(TM5):
+        for n in range(TN5):
+            global_row = c_row_block * BM5 + thread_row * TM5 + m
+            global_col = c_col_block * BN5 + thread_col * TN5 + n
+            if global_row < M and global_col < N:
+                C[global_row, global_col] = thread_results[m, n]
     return
 
 
